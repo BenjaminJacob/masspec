@@ -1,15 +1,17 @@
-% Menustruktur zum Programm Masspec (erstellt mit Guide)
+% Menustruktur zum Programm masspec_gui (erstellt mit Guide)
 % Steureng des Programms zur Zuordnung Massenspektrometischer Daten
 % Author: Benjamin Jacob
 % Datum: 30.03.2011
-function varargout = masspec_gui_init(varargin)
+function varargout = masspec_GUI(varargin)
+
+addpath(genpath(pwd))
 
 % Begin initialization code - DO NOT EDIT
 gui_Singleton = 1;
 gui_State = struct('gui_Name',       mfilename, ...
     'gui_Singleton',  gui_Singleton, ...
-    'gui_OpeningFcn', @masspec_OpeningFcn, ...
-    'gui_OutputFcn',  @masspec_OutputFcn, ...
+    'gui_OpeningFcn', @masspec_GUI_OpeningFcn, ...
+    'gui_OutputFcn',  @masspec_GUI_OutputFcn, ...
     'gui_LayoutFcn',  [] , ...
     'gui_Callback',   []);
 if nargin && ischar(varargin{1})
@@ -25,15 +27,15 @@ end
 %% Weitere intitals für die callbacks
 
 %%
-% --- Executes just before masspec is made visible.
-function masspec_OpeningFcn(hObject, eventdata, handles, varargin)
+% --- Executes just before masspec_GUI is made visible.
+function masspec_GUI_OpeningFcn(hObject, eventdata, handles, varargin)
 % This function has no output args, see OutputFcn.
 % hObject    handle to figure
 % eventdata  reserved - to be defined in a future version of MATLAB
 % handles    structure with handles and user data (see GUIDATA)
-% varargin   command line arguments to masspec (see VARARGIN)
+% varargin   command line arguments to masspec_GUI (see VARARGIN)
 
-% Choose default command line output for masspec
+% Choose default command line output for masspec_GUI
 handles.output = hObject;
 
 
@@ -75,7 +77,7 @@ end
 
 
 % --- Outputs from this function are returned to the command line.
-function varargout = masspec_OutputFcn(hObject, eventdata, handles)
+function varargout = masspec_GUI_OutputFcn(hObject, eventdata, handles)
 % varargout  cell array for returning output args (see VARARGOUT);
 % hObject    handle to figure
 % eventdata  reserved - to be defined in a future version of MATLAB
@@ -228,7 +230,6 @@ elseif isempty(handles.masterlist) || ~regexp(handles.masterlist, 'xls')
 else
     
     %   profile on
-    keyboard
     main(hObject,eventdata, handles);
     %   profile viewer
     cd(handles.workdir)
@@ -581,7 +582,7 @@ function logo_CreateFcn(hObject, eventdata, handles)
 % hObject    handle to logo (see GCBO)
 % eventdata  reserved - to be defined in a future version of MATLAB
 % handles    empty - handles not created until after all CreateFcns called
-bild=imread('module/logo.png');
+bild=imread('logo.png');
 image(bild);
 axis off
 % Hint: place code in OpeningFcn to populate

@@ -6,3 +6,8 @@ psave=0.9 %upper score limit
 pcrit=0.5 %lower score limit
 nsamples=50  %samples in one run
 overlap=1  %overlap formula     1 with intensity 2 without intensity 
+
+
+
+
+%masspec('C:\Users\user\Desktop\Benjamin\masspec7\testcase\samples','C:\Users\user\Desktop\Benjamin\masspec7\testcase\assigned','C:\Users\user\Desktop\Benjamin\masspec7\testcase\master\Nelha red Masterlist 20110211.xlsx',3,0.9,0.5,50,1)

@@ -42,9 +42,10 @@ function [master_masses col0 handles]=master_ref(hObject,eventdata, handles,pfun
 fprintf(handles.logid,'starting master_ref \n');% write to log files
 
 %Progressbar
-cont={'Step 1 / 3 Reference' '\newline' 'start make reference' '\newline'};
-hw = waitbar(0,cont);
-
+if handles.gui==1
+    cont={'Step 1 / 3 Reference' '\newline' 'start make reference' '\newline'};
+    hw = waitbar(0,cont);
+end
 % which column conatins mass,intensity,resolutuion
 [mass,intens,res]=set_column_index; 
 
@@ -65,8 +66,10 @@ cm_id=fopen([handles.assigned_dir '\color_marks.dat'],'w');
 
 %% Overall wndws of data find matches to master
 %Progressbar
-cont{3}='initialise output files';
-waitbar(0,hw,cont);
+if handles.gui==1
+    cont{3}='initialise output files';
+    waitbar(0,hw,cont);
+end
 
 %Initialdatei erstellen - für weiteres hinzufügen der Proben
 filename='master_add';
@@ -101,10 +104,10 @@ initial_progress_measure
 for wndw=1:wndws
     
     fprintf(handles.logid,'start reference wndw %i \n',wndw);
-    
-    cont{3}=['start referencing with window ' num2str(wndw) '/' num2str(ceil(length(filecell)/wndw_sze))];
-    waitbar(0,hw,cont);
-    
+    if handles.gui==1 
+        cont{3}=['start referencing with window ' num2str(wndw) '/' num2str(ceil(length(filecell)/wndw_sze))];
+        waitbar(0,hw,cont);
+    end
     %Matrix row indices -----------------------------------------
     %assignment data (Excel sheet 1)
     row=0;              %high overlap assigned
