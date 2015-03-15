@@ -1,0 +1,8 @@
+sample_dir=C:\Users\user\Desktop\Benjamin masspec stand alone\test
+assigned_dir=C:\Users\user\Desktop\Benjamin masspec stand alone\test\bearbeitet
+masterlist=C:\Users\user\Desktop\Nelha red Masterlist 20110211.xlsx
+tol=3   %preselection tolerance n times sigma
+psave=0.9 %upper score limit
+pcrit=0.5 %lower score limit
+nsamples=50  %samples in one run
+overlap=1  %overlap formula     1 with intensity 2 without intensity 

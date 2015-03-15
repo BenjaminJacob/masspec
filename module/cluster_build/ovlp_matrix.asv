@@ -1,0 +1,163 @@
+function  [I_gaps I_len]=ovlp_matrix(data,pfun)
+%[I_gaps I_len]=ovlp_matrix(data,pfun)
+%
+%
+%INPUT:
+%data: datamatrix of Peaks with columns: mass | intensity | resolution | Sample nr
+%pfun: anonymus function used to calculate overlap score
+%
+%Output-Files:
+% Files on Disk representing overlap matrix by
+% I.bin - row indices i (i: 1 <= i <= length(data) represents the peaknumber sortet by mass  )  
+% J.bin - column indices j (j: 1 <= i <= length(data) represents the
+% peaknumber sortet by mass  )  
+% O.bin - overlap scores O(i,j) between samples i,j
+%
+%Output
+%I_gaps: Cluster endpoints markers in form of gaps in the row Indices I, DeltaI > 1 
+%I_len: length of the row Indices vector (also column and score)
+%
+
+
+
+%indexing
+mass=1;
+intens=2;
+res=3;
+sample=4;
+%--------
+
+%--------------overlap calculation method---------------------------
+soround=(smax-smin+1)*6;           %pre selection inteval
+tsp=handles.psave;                 %treshhold to accept Overlapscore
+%-------------------------------------------------------------------
+
+
+%-------allowed size of Index arrays before writing data to dsik-----
+rsc=whos('mass');byte_per_entry=(rsc.bytes); %byte size of a double
+mem=memory;
+%the 3 large Index arrays (I,J,O) may share 
+portion=0.5*0.6;    %the memory left before writing to file:
+ind_store_len=mem.MemAvailableAllArrays*portion/3/byte_per_entry;
+ind_store_len=floor(ind_store_len/10^floor(log(ind_store_len)/log(10)))...
+*10^floor(log(ind_store_len+1)/log(10));
+%-----------------------------------------------------------------------
+
+
+%Open Files to save Sparsematrix on Disk
+hI=fopen('I.bin','wb'); %row indices
+hJ=fopen('J.bin','wb'); %column indices
+hO=fopen('O.bin','wb'); %overlap score
+
+
+%Output- Sparseinformation
+l_data=size(data,1);
+I=zeros((l_data),1);%row index
+J=I;                %column index
+O=I;                %Overlap value
+
+I_gaps=zeros(ceil(l_data/10),1);%gaps delta I > 1 mark cluster end points
+gap_count=0;
+i0_temp=1;%index of first not set element (first zero) for I, J and O of current memory block (resetet after every writing process)
+i0=1; %index of first not set zero: the number of total Indices(including all writes to disk) ever set for (I,J,O) incrementet by 1
+
+%% perform Calculation of overlap matrix
+
+disp('calculating overlap Matrix between norefs')
+hw = waitbar(0,'calculating overlap Matrix between norefs');
+
+for i=1:l_data %Loop over all Samples sorted by mass
+   
+    if ~mod(i,10000) || i==l_data
+        waitbar(i/l_data,hw,[ 'finding friends of sample ' num2str(i) ' / ' num2str(l_data)])
+         
+        %Need to write data to file to gain memory ?
+        if ~mod(i,ind_store_len) || i==l_data
+            
+                disp('write indices to file')
+                fwrite(hI,I(1:i0_temp-1),'double');
+                fwrite(hJ,J(1:i0_temp-1),'double');
+                fwrite(hO,O(1:i0_temp-1),'double');
+                
+                %Reset
+                I=zeros((l_data),1);%row index
+                J=I;                %column index
+                O=J;                %Overlap value
+                i0_temp=1;
+        end
+    end
+    
+    %preselection search interval
+    soround=min(soround,l_data-i);
+    
+    %preselection
+    pre=i+find(abs(data(i,mass)-data(i+1:i+soround,mass))<0.002 & data(i,sample)~=data(i+1:i+soround,sample) );
+    
+    if ~isempty(pre)
+        
+        %calculation of overlaps
+        O_temp=pfun(data(i,intens),data(pre,intens)...
+            ,data(i,mass),data(pre,mass)...
+            ,1/sqrt(log(4))*data(i,mass)./data(i,res),1/sqrt(log(4))*data(pre,mass)./data(pre,res) );
+        
+        %treshholding
+        O_temp=O_temp.* (O_temp>tsp);
+        pre(O_temp==0)=[];
+        O_temp(O_temp==0)=[];
+        
+        %delete all matches fail threshold
+        if numel(pre)==0;continue;end
+        
+        
+        
+        %best match of each sample only: sort from high to low Overlap
+        [~, i_sort]=sort(O_temp);
+        i_sort=i_sort(end:-1:1);
+        
+        %take first and through sorting best match of each sample
+        [~, i_unq, ~]=unique(data(pre(i_sort),sample),'first');
+        O_temp=O_temp(i_sort(i_unq));
+        
+        %Everthing from now orderd by mass again not from high to low Overlap !
+        % (in its order by growing mass)
+        [pre i_sort]=sort(pre(i_sort(i_unq)));%bring pre selection back to order of growing mass still containing only best match of each sample
+        O_temp=O_temp(i_sort);
+        
+        
+        
+        %identify gaps in row indices (indicator for cluster seperators)
+        if  (i0 > 1 && (i - I_last) > 1)
+  
+            if gap_count > length(I_gaps);I_gaps(end+1000)=0;end
+            gap_count=gap_count+1;
+            I_gaps(gap_count)=i0-1;
+            
+        end
+        
+        %adress-indices of vectors
+        indices=i0_temp:i0_temp+length(pre)-1;%growth will be reshaped
+        
+        
+        I(indices)=i;
+        J(indices)=pre;     %assign friends of i
+        O(indices)=O_temp;  %and their Overlaps
+        
+        %counting vector adress "pointer"
+        i0=i0+length(pre);
+        i0_temp=i0_temp+length(pre);
+        I_last=i;
+    end
+    
+end
+
+%reduce Ovarlap sparse to Information size
+I=I(1:i0_temp-1);
+J=J(1:i0_temp-1);
+O=O(1:i0_temp-1);
+I_gaps=I_gaps(1:gap_count);%break positions indentifying Clusters: Delta I >1
+
+fwrite(hI,I(1:i0_temp-1),'double');fclose(hI);
+fwrite(hJ,J(1:i0_temp-1),'double');fclose(hJ);
+fwrite(hO,O(1:i0_temp-1),'double');fclose(hO);
+I_len=i0-1;%length of Indice data (I,J,O)
+close(hw);

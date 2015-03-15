@@ -1,0 +1,69 @@
+function [l_pcrtn psheet l_pncrtn psheet_uncrtn]=export_data(handles,data,assignments,assignments_uncrtn,no_refs,p_asgnd_num,p_asgnd_txt,p_uncrt_num,...
+    p_uncrt_txt,dest_col,col_shift,master_data,l_pcrtn,psheet,l_pncrtn,psheet_uncrtn,h_noref,wndw,wndws,hw,filename,probe_size,id_range,col1,col_end)
+%% export no_refs
+% modul of masspec subroutine of masterref
+% exports assignments to excel files
+%
+% Input:
+% handles - directory information and stuff
+% data    - the sample data (of the current window)
+% assignments/assignments_uncrtin - Sample-Master assignments above upper/lower Score limit
+% no_refs    - list of not referenced peaks
+% p_asgnd_num,p_asgnd_txt,p_uncrt_num,p_uncrt_txt - assignment information
+%                                      for sheet 2 (alternative master,formulas,scores,...)
+% dest_col - excelfile columns destinatet for diffrent samplelists of  current window
+% col_shift - the shift in colposition due to previous windows
+% master_data - data of master oeaks
+% l_pcrtn/l_pncrtn - last filled row of further assignment information
+%                          ->where append new information in Excelfile
+% psheet/psheet_uncrtn - sheet number for further assignment information
+%                        starting with too can get large when more assignmens then rows per sheet offer by excel
+% h_noref   - file identifier of the file containing the not referenced
+%             peaks
+%wndw/wndws - current window of files / number of windows
+% filename  - stamm of outputfile name
+%probe_size  -
+%id_range
+%col1
+%col_end
+
+
+% Store not referenced peaks in file -> cluster in later step
+mat=[data(no_refs,:) dest_col(no_refs)+col_shift];
+fprintf(h_noref,'%f %f %f %i \n',mat');
+clear mat no_refs masses
+
+
+%% export referenced data
+
+%if master used
+if master_data(1)
+    
+    %SICHERE ZUORDNUNG:
+    disp(['writing assigned: wndw ' num2str(wndw) '/' num2str(wndws)])
+    waitbar(1/3,hw,['writing assigned: wndw ' num2str(wndw) '/' num2str(wndws)]);
+    try
+        fprintf(handles.logid,'including wndw %i in masterlist \n',wndw);
+        [l_pcrtn psheet]=write_data(assignments,p_asgnd_num,p_asgnd_txt,[handles.assigned_dir '\' filename],'_assigned',master_data,wndw,probe_size,id_range,l_pcrtn,col1,col_end,psheet);
+    catch err
+        err.message
+        fprintf(handles.logid,'%s \n',err.message);
+    end
+    
+    % %UNSICHER ZUORDNUNG (P_sicher > P > P_kritisch)
+    waitbar(1/3,hw,['writing uncertain: wndw ' num2str(wndw) '/' num2str(wndws)]);
+    disp(['writing uncertain: wndw ' num2str(wndw) '/' num2str(wndws)])
+    if ~isempty(assignments_uncrtn)
+        try
+            [l_pncrtn psheet_uncrtn]=write_data(assignments_uncrtn,p_uncrt_num,p_uncrt_txt,[handles.assigned_dir '\' filename],'_uncertain',master_data,wndw,probe_size,id_range,l_pncrtn,col1,col_end,psheet_uncrtn);
+        catch err
+            err.message
+            fprintf(handles.logid,'%s \n',err.message);
+            keyboard
+        end
+    end
+    
+else %dummy master
+    if wndw==1;xlswrite([handles.assigned_dir '\' filename '_assigned.xlsx'],{'mean_mass' 'nr matches' 'delta C12 C13','#C12 = predict' },1,'E1');end
+    xlswrite([handles.assigned_dir '\' filename '_assigned.xlsx'],id_range,1,[col2excellchar(col1) '1:' col2excellchar(col_end) '1']);
+end

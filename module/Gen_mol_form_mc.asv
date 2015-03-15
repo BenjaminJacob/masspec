@@ -1,0 +1,597 @@
+%-------------Automatisierte Suche nach molekularer Formel in UHR-MS Spektren,   Thomas Riedel, TU Braunschweig
+
+function Gen_mol_form_mc(varargin)
+
+maxfields=1e12;
+%Memory management setting
+
+
+disp('checking for matches with theoretical values starting genmol')
+
+if ~nargin || ~strcmp(varargin(1),'masspec')
+    [file,filepath,FilterIndex] = uigetfile({'*.xls*';'*.txt'},'Please chose masspec-assignded or master xls/xlsx or broeker txt file');
+    fileformat=(file(find(file=='.',1,'last'):end));
+    file_name=(file(1:find(file=='.',1,'last')-1));
+    
+    if strcmp(fileformat,'.txt')
+        data = load([file_name '_mz.txt']);
+        nrun=1;
+    elseif strcmp(fileformat,'.xls') || strcmp(fileformat,'.xlsx')
+        
+    end
+    
+else
+    
+    filepath=[cd '\'];
+    file_name = 'master_add_assigned2';
+    fileformat='.xlsx';
+    
+end
+
+output_file = [file_name '_CHONSP.txt'];
+
+
+%---------------Search Criteria:
+
+questioninput=1;%set questioninput to 1/0 if you want / dont want to be ask to input search criteria manualy if not values below will be used
+
+if ~questioninput %Unten stehenden werte k�nnen angepasst werden
+    
+    Acc = 300;    %--------------Zul�ssige Akkuranz der Summenformelzuordnung in ppb
+    min_I = 3.4e6;          %Mindest Intensit�t
+    min_hc = 0.3;           %H/C
+    max_oc = 1;             %O/C
+    max_c = 40;             %Maximale C Anzahl
+    max_n = 2;             %Maximale N Anzahl
+    max_s = 1;             %Maximale S Anzahl
+    max_p = 1;             %Maximale P Anzahl
+    max_cl = 1;             %Maximale Cl Anzahl
+    max_Na = 1;             %Maximale Na Anzahl
+    max_Fe = 1;             %Maximale Fe Anzahl
+    charge = -1;            %Ladung: Messung ...
+    min_DBE = -0.5;             %Minimaler DBE
+    tol_br = 20;            %Prozentuale Toleranz f�r 37Cl Isotopenpeakintensit�t
+    
+else
+    
+    prompt = {'Accepted Accuracy of Summenformelassignement in ppb';...
+        'min. Intensity   (for peaks beingt accepted as peaks) [if startet from masspec entry wont be used ]'
+        'min H/C to allow when generatig mol masses';...
+        'max O/C to allow when generatig mol masses';...
+        'max C   (to go to when testing peaks against theoretical molecular formulas)';...
+        'max N   (to go to when testing peaks against theoretical molecular formulas)';...
+        'max S   (to go to when testing peaks against theoretical molecular formulas)';...
+        'max P   (to go to when testing peaks against theoretical molecular formulas)';...
+        'max Cl  (to go to when testing peaks against theoretical molecular formulas)';...
+        'max Na  (to go to when testing peaks against theoretical molecular formulas)';...
+        'max Fe  (to go to when testing peaks against theoretical molecular formulas)';...
+        'charge (-1 or +1 ionisation)';...
+        'min DBE (for peaks being accepted as peaks)';...
+        'Tolerance for 37Cl Isotop peak intensity in %'};
+    dlg_title = 'Search Criteria: set acceptance minima & search intervals';
+    num_lines = 1;
+    def = {'300';'3.4e6';'0.3';'1';'40';'4';'1';'1';'1';'1';'1';'-1';'-0.5';'20'};
+    answer = inputdlg(prompt,dlg_title,num_lines,def);
+    
+    if isempty(answer);return;end
+    
+    Acc = str2double(answer{1});    %--------------Zul�ssige Akkuranz der Summenformelzuordnung in ppb    min_I =   str2double(answer{3});          %Mindest Intensit�t
+    min_I = str2double(answer{2});            %minimum intensity
+    min_hc =  str2double(answer{3});          %H/C
+    max_oc =  str2double(answer{4});          %O/C
+    max_c =  str2double(answer{5});           %Maximale C Anzahl
+    max_n =  str2double(answer{6});           %Maximale N Anzahl
+    max_s =  str2double(answer{7});           %Maximale S Anzahl
+    max_p =  str2double(answer{8});           %Maximale P Anzahl
+    max_cl = str2double(answer{9});           %Maximale Cl Anzahl
+    max_Na = str2double(answer{10});          %Maximale Na Anzahl
+    max_Fe = str2double(answer{11});          %Maximale Fe Anzahl
+    charge =  str2double(answer{12});     %Maximale Ladung: Von -1 bis ...
+    min_DBE = str2double(answer{13});         %Minimaler DBE
+    tol_br = str2double(answer{14});            %Prozentuale Toleranz f�r 37Cl Isotopenpeakintensit�t
+end
+
+
+
+
+%---------------Exact Masses:
+
+mass_c = 12.0000000;
+mass_13c = 13.0033548;
+mass_h = 1.007825;
+mass_o = 15.9949146;
+mass_n = 14.003074;
+mass_s = 31.9720707;
+mass_p = 30.9737615;
+mass_cl = 34.9688527;
+mass_37cl = 36.9659026;
+mass_Na = 22.9897692809;
+mass_Fe = 55.9349421;
+mass_e = 0.0005485;
+
+
+%Get Dimensions of Excle sheet
+[nrows ncols]=getExcelDim([filepath file_name fileformat]);
+maxrows=floor(maxfields/4);%working with 4 columns A:D
+
+% werte=xlsread([filepath file_name fileformat],1,'A1:A2')
+% xlswrite([filepath file_name fileformat],1,werte,'A2:A2')
+
+
+nrun=ceil(nrows/maxrows);
+n = 0;
+result=[];
+indices=[];
+L_file_prev_runs=0;
+
+nr=0;
+ncombos=sum( nrun*(max_c-6+1)* ...
+    ((6:max_c)*3 - round(min_hc* (6:max_c))) .*  round((6:max_c) * max_oc )...
+    * (max_n+1) * (max_s+1) * (max_p+1) * (max_cl+1) * (max_Na+1) * (max_Fe+1)  );
+
+for run_nr=1:nrun
+    if ~strcmp(fileformat,'.txt')
+        %read section
+        row0=2+(run_nr-1)*maxrows;
+        row1=min(row0+maxrows-1,nrows);%(+1 Headline)
+        
+        %write markers to file to assure data and textdata have same length
+        [~,strcheck0]=xlsread([filepath file_name fileformat],sprintf('A%i:B%i',row0,row0));
+        [~,strcheck1]=xlsread([filepath file_name fileformat],sprintf('A%i:B%i',row1,row1));
+        empty0=isempty(strcheck0);
+        empty1=isempty(strcheck1);
+        
+        if empty0;xlswrite([filepath file_name fileformat],{'...'},1,sprintf('B%i',row0));end
+        if empty1;xlswrite([filepath file_name fileformat],{'...'},1,sprintf('B%i',row1));end
+        
+        [data textdata]=xlsread([filepath file_name fileformat],sprintf('A%i:D%i',row0,row1));
+        
+        if size(textdata,2)>1
+            textdata=textdata(:,2);
+        end
+        if empty0;textdata(1)={''};end
+        if empty1;textdata(end)={''};end
+    end
+    
+    %textdata=textdata(1+(run==1):end,2);
+    
+    %---------------Reading file
+    
+    L_file = size(data,1);
+    mz = data(:,1);
+    Res = data(:,4);
+    
+    if strcmp(fileformat,'.txt')
+        I = data(:,2);
+        S_N = data(:,3);
+    else
+        
+        I = data(:,3);
+    end
+    
+    %---------------Search formular
+    
+    result = [result; zeros(L_file,20)];
+    c13=nan(L_file,1);
+    
+    kk=1;
+    
+    for carbon = 6:max_c
+        
+        for hydrogen = round(min_hc * carbon):(carbon*3)
+            
+            for oxygen = 1:round(max_oc * carbon)
+                
+                for nitrogen = 0:max_n
+                    
+                    for sulfur = 0:max_s
+                        
+                        for phos = 0:max_p
+                            
+                            for chlor = 0:max_cl
+                                
+                                for Na = 0:max_Na
+                                    
+                                    for Fe = 0:max_Fe
+                                        
+                                        
+                                        dbe_check = carbon - 0.5*(hydrogen + (-1 * charge)) - 0.5*chlor + 0.5*nitrogen + 0.5*phos + 1; %if dbe_check < min_DBE, weiter = 1; break, end;
+                                        acc_mass =  (carbon*mass_c + hydrogen* mass_h + oxygen * mass_o + nitrogen * mass_n + sulfur * mass_s + phos * mass_p + mass_cl * chlor + mass_Fe * Fe + mass_Na * Na - mass_e * charge)/abs(charge);  %Masse des ionisierten, geladenen Ions
+                                        acc_mass_iso = (mass_13c + (carbon-1)*mass_c + hydrogen* mass_h + oxygen * mass_o + nitrogen * mass_n + sulfur * mass_s + phos * mass_p + mass_cl * chlor + mass_Fe * Fe + mass_Na * Na - mass_e * charge)/abs(charge);  %13C
+                                        acc_mass_neutral = carbon*mass_c + hydrogen* mass_h + oxygen * mass_o + nitrogen * mass_n + sulfur * mass_s + phos * mass_p + mass_cl * chlor + mass_Fe * Fe + mass_Na * Na - mass_h * charge;  %IUPAC Masse des neutralen Molek�ls
+                                        Tolerance = Acc * acc_mass / 1e9;
+                                        a = find(acc_mass > (mz - Tolerance) & acc_mass < (mz + Tolerance));
+                                        a_iso = find(acc_mass_iso > (mz - Tolerance) & acc_mass_iso < (mz + Tolerance));
+                                        
+                                        
+                                        
+                                        n_ja = 0;   %--------------Stickstoff Regel
+                                        if rem(round(acc_mass_neutral),2) == 0 && rem(nitrogen,2) == 0, n_ja = 1; end;
+                                        if rem(round(acc_mass_neutral),2) == 1 && rem(nitrogen,2) == 1, n_ja = 1; end;
+                                        
+                                        
+                                        a(I(a) < min_I)=[];%intensity check
+                                        
+                                        if length(a)>1;
+                                            ranks=0;
+                                            [vals isort]=sort(abs(data(a,1)-acc_mass));
+                                            ranks(isort)=1:length(a);
+                                        end
+                                        
+                                        
+                                        
+                                        for di=1:length(a)
+                                            
+                                            
+                                            Cl_ja = 1;   %--------------Suche nach Cl Isotopenmuster
+                                            if a(di)>0 & chlor > 0
+                                                Cl_ja = 0;
+                                                acc_mass_iso_cl = -1 * (mass_c + (carbon-1)*mass_c + hydrogen* mass_h + oxygen * mass_o + nitrogen * mass_n + sulfur * mass_s + phos * mass_p + mass_37cl * chlor + mass_Na * Na - mass_e * charge) / charge;  %81Br
+                                                a_cl_iso = find(acc_mass_iso_cl > (mz - Tolerance) & acc_mass_iso_cl < (mz + Tolerance));
+                                                I_cl_iso = I(a_cl_iso); pm_cl = tol_br * I_cl_iso / 100;
+                                                if a_cl_iso > 0 & (I(a(di))*0.32*chlor) > (I_cl_iso - pm_cl) & (I(a(di))*0.32*chlor) < (I_cl_iso + pm_cl)
+                                                    Cl_ja = 1;
+                                                end;
+                                            end
+                                            
+                                            
+                                            if a(di)>0 & I(a(di)) >= min_I & n_ja == 1 & Cl_ja == 1 & dbe_check > min_DBE
+                                                indices=[indices a(di)+row0];
+                                                result(n+1,17)=0;
+                                                %if length(a)>1;
+                                                %a=a(1); result(n+1,17) = 1; end;
+                                                n = n + 1;
+                                                result(n, 11) = (1 - (acc_mass / mz(a(di)))) * 1e9;
+                                                result(n, 2) = mz(a(di)); result(n, 9) = I(a(di));
+                                                if strcmp(fileformat,'.txt')
+                                                    result(n, 10) = S_N(a(di));
+                                                end
+                                                result(n, 1) = acc_mass_neutral;
+                                                result(n,15) = 0; result(n,16) = Res(a(di));
+                                                if a_iso >0; result(n,15) = 1; end;
+                                                result(n, 3) = carbon; result(n, 4) = hydrogen - charge; result(n, 5) = oxygen; result(n, 6) = nitrogen; result(n, 7) = sulfur; result(n, 8) = charge; result(n, 14) = phos; result(n, 18) = chlor;
+                                                result(n,19) = Na; result(n,20) = Fe;
+                                                %sprintf('m/z (Ion) %0.5f, C%d H%d O%d N%d S%d P%d Cl%d Na%d Fe%d, m/z(IUPAC) %0.5f, DBE: %0.0f, z: %0.0f, Error [ppb]: %0.0f', mz(a), carbon, (hydrogen-charge), oxygen, nitrogen, sulfur, phos, chlor, Na, Fe, result(n, 1), dbe_check, charge, result(n,11))
+                                                
+                                                
+                                                %formel excel
+                                                if ~strcmp(fileformat,'.txt')
+                                                    formel=sprintf('C%dH%dN%dO%dS%dP%dCl%dNa%dFe%d',carbon, (hydrogen-charge), nitrogen, oxygen, sulfur, phos, chlor, Na, Fe);
+                                                    
+                                                    formel= reformat(formel);
+                                                    
+                                                    
+                                                    if length(a)>1;
+                                                        formel=[formel '(' num2str(ranks(di)) ')'];
+                                                    end
+                                                    
+                                                    
+                                                    %% check if new formula matches old formula
+                                                    
+                                                    i_slash=strfind(textdata{a(di)},'/');
+                                                    %adjust format e.g
+                                                    %C5H7O1 -> C5H7O
+                                                    %alternate formula
+                                                    if ~isempty(i_slash)
+                                                        
+                                                        
+                                                        testcell={};
+                                                        for fi=1:length(i_slash)+1
+                                                            if fi==1
+                                                                testcell(fi)={reformat(textdata{a(di)}(1:i_slash(1)-1))};
+                                                            elseif(fi)==length(i_slash)+1
+                                                                testcell(fi)={reformat(textdata{a(di)}(i_slash(end)+1:end))};
+                                                            else
+                                                                testcell(fi)={reformat(textdata{a(di)}(i_slash(fi-1)+1:i_slash(fi)-1))};
+                                                            end
+                                                            %???
+                                                            
+                                                        end
+                                                        
+                                                        %entfernen
+                                                        %testcell=uniques(testcell)
+                                                        
+                                                        
+                                                        if ~sum(strcmp(testcell,formel))
+                                                            textdata{a(di)}=[(textdata{a(di)}) '/' formel];
+                                                        end
+                                                        %append existent formulas
+                                                        
+                                                        
+                                                        
+                                                        %max. one formula yet
+                                                    else
+                                                        %first formula
+                                                        if strcmp(textdata{a(di)},'') || strcmp(textdata{a(di)},'no reference') || strcmp(textdata{a(di)},formel) %nothing yet
+                                                            
+                                                            textdata{a(di)}=formel;
+                                                            
+                                                        else
+                                                            textdata{a(di)}=[reformat(textdata{a(di)}) '/' formel];
+                                                        end
+                                                        
+                                                    end
+                                                    
+                                                    
+                                                    
+                                                end
+                                                
+                                                
+                                                
+                                                
+                                                
+                                                
+                                                
+                                            end
+                                            
+                                            
+                                        end
+                                        kk=kk+1;
+                                    end
+                                    
+                                    
+                                    
+                                end
+                                
+                            end
+                            
+                        end
+                    end
+                end
+            end
+        end
+    end
+    
+    keyboar
+    if ~strcmp(fileformat,'.txt')
+        xlswrite([filepath '\' file_name fileformat],textdata,sprintf('B%i:B%i',row0,row1));
+        xlswrite([filepath '\' file_name fileformat],c13,sprintf('H%i:H%i',row0,row1));
+    end
+    
+    result=result(1:n,:);
+    indices=unique(indices);
+    
+    
+    
+    %intialize free space in doopel
+    if run_nr==1
+        doppel=zeros(L_file,1);
+    else
+        doppel(end+(1:L_file))=zeros(L_file,1);
+    end
+    
+    
+    for i = 1:L_file
+        %doppel(i) = length(find(data(i,1) == result(:,2)));
+        doppel(i+L_file_prev_runs) = sum(mz(i) == result(:,2));
+    end
+    
+    
+    
+    figure(3)
+    subplot(3,1,3);
+    hold on; box on;
+    set(gca,'Fontsize',16);
+    plot(mz, doppel(L_file_prev_runs+1:L_file_prev_runs+L_file), 'k');
+    xlabel('m/z'); ylabel('# of formulas');
+    %
+    
+    
+    L_file_prev_runs=L_file_prev_runs+L_file;
+end
+
+
+sum(~strcmp(textdata,'no reference'))
+
+
+%-------------------------Etwas Statistik
+disp(['Formulas for ' num2str(length(indices)) ' different masses were found ']);
+disp(['Total # of formulas assigned: ' num2str(n)  ', # of N compounds: ' num2str(length(find(result(:,6)))) ', # of S compounds: ' num2str(length(find(result(:,7)))) ', # of P compounds: ' num2str(length(find(result(:,14)))) ', # of Na compounds: ' num2str(length(find(result(:,19)))) ', # of Fe compounds: ' num2str(length(find(result(:,20)))) ', # of Cl compounds: ' num2str(length(find(result(:,18))))]);
+disp(['Average: C ' num2str(sum(result(1:n,3))/n) ' H ' num2str(sum(result(1:n,4))/n) ' O ' num2str(sum(result(1:n,5))/n) ' N ' num2str(sum(result(1:n,6))/n) ' S ' num2str(sum(result(1:n,7))/n) ' P ' num2str(sum(result(1:n,14))/n)]);
+rms = sqrt(sum(result(:,11).*(result(:,11))/n));
+disp(['RMS of assigned formulas: ' num2str(rms)]);
+
+disp(['Single charge: ' num2str(length(find((result(:,8) == -1)))) ', Double charge: ' num2str(length(find(result(:,8) < -1)))]);
+
+
+% doppel(1:L_file) = 0;
+%
+% for i = 1:L_file
+%     doppel(i) = length(find(data(i,1) == result(:,2)));
+% end
+
+disp(['Einfach Benennungen: ' num2str(length(find(doppel == 1))) ', Zweifach Benennungen: ' num2str(length(find(doppel == 2))) ', Dreifach Benennungen: ' num2str(length(find(doppel == 3))) ', Vierfach Benennungen: ' num2str(length(find(doppel == 4)))]);
+
+
+
+%-------------------------Der gute alte van Krevelen
+figure (1);
+clf; hold on; box on;
+set(gca,'Fontsize',16);
+plot(result(1:n,5)./result(1:n,3), result(1:n,4)./result(1:n,3), 'ko', 'markerfacecolor','k','markersize',4);
+plot(result(find(result(:,6)),5)./result(find(result(:,6)),3), result(find(result(:,6)),4)./result(find(result(:,6)),3), 'gs', 'markersize',4);
+plot(result(find(result(:,7)),5)./result(find(result(:,7)),3), result(find(result(:,7)),4)./result(find(result(:,7)),3), 'r+', 'markersize',4);
+plot(result(find(result(:,14)),5)./result(find(result(:,14)),3), result(find(result(:,14)),4)./result(find(result(:,14)),3), 'bd', 'markersize',4);
+legend('All formulas', 'Nitrogen compounds', 'Sulfur compounds', 'Phosphorus compounds');
+xlabel('O/C'); ylabel('H/C');
+
+
+
+%-------------------------Kendrick Massen Defekt
+RM = result(:,1);
+NM = round(RM);
+KM = RM * 14 / 14.0156501;
+KMD = NM - KM;
+
+%KM(n_formula) = (RM(n_formula) * 14 / 14.0156501);
+%KMD(n_formula) = NM(n_formula) - KM(n_formula);
+
+figure (2);
+hold on; box on;
+set(gca,'Fontsize',16);
+plot(KM, KMD, 'ko', 'markerfacecolor','k','markersize',4);
+plot(KM(find(result(:,6))), KMD(find(result(:,6))), 'gs', 'markersize',4);
+plot(KM(find(result(:,7))), KMD(find(result(:,7))), 'r+', 'markersize',4);
+plot(KM(find(result(:,14))), KMD(find(result(:,14))), 'bd', 'markersize',4);
+legend('All formulas', 'Nitrogen compounds', 'Sulfur compounds', 'Phosphorus compounds');
+xlabel('Kendrick Mass'); ylabel('Kendrick Mass Defect (CH_2)');
+
+
+
+%-------------------------Error Plot
+figure (3);
+subplot(3,1,1);
+hold on; box on;
+set(gca,'Fontsize',16, 'YLim', [-Acc Acc]);
+plot(RM, result(:,11), 'kd', 'markerfacecolor','k','markersize',4);
+plot(RM(find(result(:,8)<-1)), result(find(result(:,8)<-1),11), 'ro', 'markersize',4);
+xlabel('m/z'); ylabel('Mass measurement error [ppb]');
+legend('Singly charged', 'Multiple charged');
+
+subplot(3,1,2);
+hold on; box on;
+set(gca,'Fontsize',16, 'YLim', [-Acc Acc]);
+plot(RM, result(:,11), 'kd', 'markerfacecolor','k','markersize',4);
+plot(RM(find(result(:,6))), result(find(result(:,6)),11), 'gd', 'markersize',4);
+plot(RM(find(result(:,7))), result(find(result(:,7)),11), 'r+', 'markersize',4);
+plot(RM(find(result(:,14))), result(find(result(:,14)),11), 'bd', 'markersize',4);
+xlabel('m/z'); ylabel('Mass measurement error [ppb]');
+legend('CHO', '+N', '+S', '+P');
+
+% subplot(3,1,3);
+% hold on; box on;
+% set(gca,'Fontsize',16);
+% plot(data(:,1), doppel, 'k');
+% xlabel('m/z'); ylabel('# of formulas');
+%
+
+
+a(1,1:n)=result(:,1);
+b(1,1:n)=result(:,2);
+c(1,1:n)=result(:,3);
+d(1,1:n)=result(:,4);
+e(1,1:n)=result(:,5);
+f(1,1:n)=result(:,6);
+g(1,1:n)=result(:,7);
+h(1,1:n)=result(:,8);
+i(1,1:n)=result(:,9);
+j(1,1:n)=result(:,10);
+k(1,1:n)=result(:,11);
+l(1,1:n)=KM;
+m(1,1:n)=KMD;
+o(1,1:n)=result(:,14);  %----# Phosphor
+p(1,1:n)=result(:,15);  %----Isotopenpeak. 0 = nicht gefunden, 1 = gefunden
+q(1,1:n)=result(:,16);  %----Aufl�sung
+r(1,1:n)=result(:,17);
+s(1,1:n)=result(:,18);  %----# Chlor
+t(1,1:n)=result(:,19);  %----# Na
+u(1,1:n)=result(:,20);  %----# Fe
+
+data = [a;b;c;d;e;f;g;h;i;j;k;l;m;o;p;q;r;s;t;u];
+
+fid = fopen(output_file,'wt');
+
+fprintf(fid,'%4.5f %4.5f %2.0f %2.0f %2.0f %2.0f %2.0f %1.0f %8.0f %5.0f %3.0f %4.2f %1.5f %2.0f %2.0f %7.0f %1.0f %1.0f %1.0f %1.0f\n', data);
+
+
+% fmbr = find(result(:,19));
+% uniques(1:n) = ones(1:n,1);
+%
+% for i = 1: length(fmbr)
+%     da = find(mz == mz(fmbr(i)));
+%     if length(da)>1
+%         for p=1:length(da)
+%             if result(da(p),6) == 2 & result(da(p),7) == 2 & result(da(p), 19) > 0
+%                 uniques(da(p)) = 0;
+%             end;
+%         end
+%
+%     end
+%
+% end
+%
+% only = find(uniques);
+% lu = length(only);
+end
+
+%% Helper Functions
+function formel=reformat(formel)
+%% reduce formula to Elements
+%  e.g.  C1H4N0O0S0P0Cl0Na0Fe0 => CH4
+%
+E1=(formel>64 & formel <91);% cahrpositions
+%Delete ein Buchstaben                                                 %Elemente
+pos0=formel=='0';% 1s at pos in formel where zero
+del=find( pos0 & [0 E1((1:end-1)) ]);%generates ones at position of zero values which foll charvalues / Elementsymbols
+del=[del-1 del];
+formel(del)=[];%delete from formula
+%Delete zwei Buchstaben                                                %Elemente
+pos0=formel=='0';% 1s at pos in formel where zero
+E1=(formel>64 & formel <91);% cahrpositions
+E2=(formel>96 & formel <123);% tweit Buchstabe
+del=find( pos0 & [0 E2((1:end-1)) ]);
+del=[del-2 del-1 del ...
+    find(formel=='1' &  ([0 E1((1:end-1))] | [0 E2((1:end-1))]) &  [E1((2:end)) 0])];
+formel(del)=[];%delete from formula
+
+if strcmp(formel(end),'1') && formel(end-1)>57%delete 1 as last entry
+    formel(end)=[];
+end
+
+%% sort permutations  C H N O S P Cl Na Fe
+%Set element positions
+posC=1;posH=2;posN=3;posO=4;posS=5;posP=6;
+posCl=7 - posC; % C and Cl share letter C entry counted twice is substracted b C
+posNa=8 - posN; % same for Na and N
+posFe=9;
+
+cont=([formel(1:end-1)=='C' 0] *posC + ...
+    (formel=='H')*posH+...
+    (formel=='N')*posN+...
+    (formel=='O')*posO+...
+    (formel=='S')*posS+...
+    (formel=='P')*posP+...
+    ([formel(1:end-1)=='C' 0] & [formel(2:end)=='l' 0])*posCl+...   % substract 1 from single C in Cl
+    ([formel(1:end-1)=='N' 0] & [formel(2:end)=='a' 0])*posNa +... % substract 3 from single N in Na
+    ([formel(1:end-1)=='F' 0] & [formel(2:end)=='e' 0])*posFe);
+
+
+if ~issorted(cont(cont>0));
+   
+    cont2=cont;
+    for i=2:length(cont2)
+        if cont2(i)==0
+            cont2(i)=cont2(i-1); %give element index also to digitpositions of numbers specifying their ammount
+        end
+    end
+   
+    %now sort by order set by positions number for elements 
+    [~ ,neworder]=sort(cont2); %a group of entries with same number
+    formel=formel(neworder);   %keeps order with in group => elements are still followed by their ammount
+    
+    
+    
+end
+
+end
+
+%Help function for Excel
+function [rowEnd colEnd]=getExcelDim(filename)
+
+excelObj = actxserver ('Excel.Application');
+
+% Full path to your file required
+fileObj = excelObj.Workbooks.Open(filename);
+
+sheetObj = excelObj.Worksheets.get('Item', 'Sheet1');
+
+% Row end, appears to work for rectangular data in sheet.
+rowEnd = sheetObj.Range('A1').End('xlDown').Row;
+% Column end for first row
+colEnd = sheetObj.Range('A1').End('xlToRight').Column;
+
+%
+%excelObj.Workbooks.Close;
+fileObj.Close
+delete(fileObj);
+end
